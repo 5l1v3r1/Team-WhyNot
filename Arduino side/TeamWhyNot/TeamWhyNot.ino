@@ -4,17 +4,25 @@
 #include <Wire.h>
 #include <SFE_BMP180.h>
 #include <SoftwareSerial.h>
-#include <SD.h>
 #include <Servo.h>
 
 //ADXL345 and rtc variable initializing
 RTC_DS3231 rtc;
 ADXL345 adxl = ADXL345();
 
+int analogInput = 6;
+int stat = 0;
+int refresh = 1000;
+float vout = 0.0; // arduino'ya giren voltaj değeri
+float vin = 0.0; // bataryamızın voltaj değeri
+float R1 = 100000; // R1 direnci 100k
+float R2 = 10000; // R2 direnci 10k
+int value = 0; // analog port okunan değer (0, 1024)
+
 
 //Software serial port initializing
 SoftwareSerial mySerial(7, 8);
-SoftwareSerial Xbee(5,6);
+SoftwareSerial Xbee(6,5);
 Adafruit_GPS GPS(&mySerial);
 
 //Servo variable initializing
@@ -26,16 +34,6 @@ SFE_BMP180 pressure;
 
 //Creating file variables for photos.
 //There will be 10 photo in 30m(meter) period
-File photo1;
-File photo2;
-File photo3;
-File photo4;
-File photo5;
-File photo6;
-File photo7;
-File photo8;
-File photo9;
-File photo10;
 
 
 #define ALTITUDE 1900.0
@@ -46,7 +44,15 @@ void useInterrupt(boolean);
 
 int i = 0;
 int posit = 0;
-int last altitude = 0;
+int lastalt = 0;
+int kirmiziPin = 12;
+int yesilPin = 11;
+int maviPin = 10;
+int kirmizi2 = 3;
+int yesil2 = 4;
+int mavi2 = 13;
+int buttonPin = 2;
+int buttonState = 0;  
 
 void setup() {
   //Xbee and Serial port communication
@@ -62,15 +68,15 @@ void setup() {
   
   //BMP180 initializing
   pressure.begin();
+  
+  pinMode(buttonPin, INPUT);
+  pinMode(kirmiziPin, OUTPUT);
+  pinMode(yesilPin, OUTPUT);
+  pinMode(maviPin, OUTPUT);
 
   //Servo motor attaching port
-  heatshield.attach();//Will be initialized
-
-  //Sd Card initializing
-  if(!SD.begin(4)){
-    while(1);
-  }
-
+  heatshield.attach(9);//Will be initialized
+  heatshield.write(0);
   //RTC start
   rtc.begin();
   rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
@@ -96,17 +102,9 @@ void setup() {
   adxl.doubleTapINT(0);
   adxl.singleTapINT(0);
 
-  photo1 = SD.open("photo1.jpg", FILE_WRITE);
-  photo2 = SD.open("photo2.jpg", FILE_WRITE);
-  photo3 = SD.open("photo3.jpg", FILE_WRITE);
-  photo4 = SD.open("photo4.jpg", FILE_WRITE);
-  photo5 = SD.open("photo5.jpg", FILE_WRITE);
-  photo6 = SD.open("photo6.jpg", FILE_WRITE);
-  photo7 = SD.open("photo7.jpg", FILE_WRITE);
-  photo8 = SD.open("photo8.jpg", FILE_WRITE);
-  photo9 = SD.open("photo9.jpg", FILE_WRITE);
-  photo10 = SD.open("photo10.jpg", FILE_WRITE);
-
+ // put your setup code here, to run once:
+  pinMode(analogInput, INPUT);
+  Serial.begin(9600);
 
   useInterrupt(true);
   delay(1000);
@@ -142,14 +140,40 @@ void useInterrupt(boolean v) {
 
 uint32_t timer = millis();
 
+
+void renkAyarla(int kpin, int ypin, int mpin,int kirmizi, int yesil, int mavi){
+ kirmizi = 255 - kirmizi;
+ yesil = 255 - yesil;
+ mavi = 255 - mavi;
+ analogWrite(kpin, kirmizi);
+ analogWrite(ypin, yesil);
+ analogWrite(mpin, mavi);
+}
+
 void loop() {
 
+  buttonState = digitalRead(buttonPin);
+
+  /*BATTERY SENSOR START*/
+  value = analogRead(analogInput);
+ 
+  vout = (value*5)/1024;
+  vin = vout*(R1+R2) / R2;
+
+
+  vout = (value*5)/1024;
+  vin = vout*(R1+R2) / R2;
+
+  
+  delay(refresh);
+  /* BATTERY SENSOR END*/
+ 
   //ADXL345
   int x,y,z;   
   adxl.readAccel(&x, &y, &z);
 
-  if((y < -30)&& (z < -30)){
-    heatshield.write(45);//Half rotate for heatshield.This will block heat shield from release 
+  if(y > 30){
+    //heatshield.write(45);//Half rotate for heatshield.This will block heat shield from release 
   }
 
   //RTC
@@ -203,12 +227,17 @@ void loop() {
   Xbee.print(",");
   //Altitude from bmp180
   Xbee.print(a,0);
+  Serial.print(a,0);
   Xbee.print(",");
   //Pressure from bmp180
   Xbee.print(P,2);
+  Serial.print(P,2);
   Xbee.print(",");
   //Temperature from bmp180
   Xbee.print(T,2);
+  Xbee.print(",");
+  Xbee.print(vin);
+  Xbee.print("v");
   Xbee.print(",");
   //GPS Data
 
@@ -264,68 +293,28 @@ void loop() {
   Xbee.print(",");
   Xbee.print(z);
   //New Line
+  Xbee.print(",");
+  Xbee.print("Active");
   Xbee.println();
-
-
-//Taking photo between 30 m altitude
-  while(GPS.altitude < 310) {
-    if (GPS.altitude < 310)
-      heatshield.write(90);//Degree will be changed
-      photo1.print();
-      break;
-    if (GPS.altitude < 280)
-      photo2.print();
-      break;
-    if (GPS.altitude < 250)
-      photo3.print();
-      break;
-    if (GPS.altitude < 220)
-      photo4.print();
-      break;
-    if (GPS.altitude < 190)
-      photo5.print();
-      break;
-    if (GPS.altitude < 160)
-      photo6.print();
-      break;
-    if (GPS.altitude < 130)
-      photo7.print();
-      break;
-    if (GPS.altitude < 100)
-      photo8.print();
-      break;
-    if (GPS.altitude < 70)
-      photo9.print(); 
-      break;
-    if (GPS.altitude < 40)
-      photo10.print();
-      break;
-    if (GPS.altitude < 30)
-      photo1.close();
-      photo2.close();
-      photo3.close();
-      photo4.close();
-      photo5.close();
-      photo6.close();
-      photo7.close();
-      photo8.close();
-      photo9.close();
-      photo10.close();
-      break;
-    if(GPS.altitude <20)
-      break;
-
+  if (buttonState == HIGH) {
+    // turn LED on:
+    if(a < 100){
+      renkAyarla(kirmiziPin, yesilPin, maviPin,255, 0, 0);
+    }else{
+      renkAyarla(kirmiziPin, yesilPin, maviPin,0, 255, 0);
+    } 
+  } else {
+    renkAyarla(kirmiziPin, yesilPin, maviPin,0, 0, 255);
   }
-  if(i % 3 == 0){
-    //Controlling for descending status
-    lastaltitude = GPS.altitude;
-    if((lastaltitude - GPS.altitude) < 0){
-      //If there is such a condition xbee will tell that
-      Xbee.println("Probe is descending");
-
-    }
+  if (vin > 1){
+    renkAyarla(kirmizi2, yesil2, mavi2,0, 255, 0);
+  }else{
+    renkAyarla(kirmizi2, yesil2, mavi2,255, 0, 0);
   }
 
   i++;
+  
   delay(1000);
 }
+
+
